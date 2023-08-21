@@ -1,0 +1,135 @@
+version: 2.1
+
+orbs:
+  slim-shield: slimdevops/slim-shield@0.0.3
+parameters:
+  image-name:
+    description: Image to be hardened.
+    type: string
+    default: sreejithfocaloid/node-example:latest
+  cimg-tag:
+    description: Which tag to be used for cimg/base.
+    type: string
+    default: current #Which tag to be used for cimg. eg:  cimg/base:current
+executors:
+  docker-publisher: 
+    environment:
+      IMAGE_NAME: << pipeline.parameters.image-name >>
+    docker: # Each job requires specifying an executor.
+    # (either docker, macos, or machine), see
+      - image: cimg/base:<< pipeline.parameters.cimg-tag >>
+        auth:
+          username: $DOCKERHUB_USERNAME
+          password: $DOCKERHUB_PASSWORD
+jobs:
+  publishLatestToHub: 
+    executor: docker-publisher
+ 
+    steps: 
+      - checkout
+      - setup_remote_docker
+      - run: 
+          name: Publish Docker Image to Docker Hub
+          command: |
+            echo "$DOCKERHUB_PASSWORD" | docker login -u "$DOCKERHUB_USERNAME" --password-stdin
+            docker build -t << pipeline.parameters.image-name >> .
+            docker push << pipeline.parameters.image-name >>
+
+  runNormaltest:
+    parameters:
+      imageName:
+        type: string
+    docker: # Each job requires specifying an executor
+    # (either docker, macos, or machine), see
+      - image: cimg/node:current
+    working_directory: ~/repo
+    steps:
+      - checkout
+      - setup_remote_docker:
+          version: 20.10.14
+      - run:
+          name: Create Network
+          command: |
+            docker network create test_network
+      - run:
+          name: Start Container
+          command: |
+            docker run --name=testcontainer -d --net=test_network << parameters.imageName >>
+      - run:
+          name: Run Newman tests in Container
+          command: |
+            docker create -v /etc/newman --name configs alpine:3.4 /bin/true
+            docker cp collection.json configs:/etc/newman
+            docker run --volumes-from configs --net=test_network postman/newman:latest run "collection.json"  --reporters cli,junit
+      - run:
+          name: Stop Container
+          command: |
+            docker stop testcontainer
+            docker wait testcontainer
+            docker logs testcontainer
+            docker rm -f testcontainer
+  runInstrumentedtest:
+    parameters:
+      imageName:
+        type: string
+    docker: # Each job requires specifying an executor
+    # (either docker, macos, or machine), see
+      - image: cimg/node:current
+    working_directory: ~/repo
+    steps:
+      - checkout
+      - setup_remote_docker:
+          version: 20.10.14
+      - run:
+          name: Create Network
+          command: |
+            docker network create test_network
+      - run:
+          name: Start Container
+          command: |
+            docker run --cap-add ALL --user root --name=testcontainer -d --net=test_network << parameters.imageName >>
+      - run:
+          name: Run Newman tests in Container
+          command: |
+            docker create -v /etc/newman --name configs alpine:3.4 /bin/true
+            docker cp collection.json configs:/etc/newman
+            docker run --volumes-from configs --net=test_network postman/newman:latest run "collection.json"  --reporters cli,junit
+      - run:
+          name: Stop Container
+          command: |
+            docker stop testcontainer
+            docker wait testcontainer
+            docker logs testcontainer
+            docker rm -f testcontainer
+workflows:
+  engine-execution:
+    jobs:
+      # Make sure to include "filters: *filters" in every test job you want to run as part of your deployment....
+      - publishLatestToHub:
+          name: Publish Latest
+      - runNormaltest:
+          name: Fat Test Suite
+          imageName: sreejithfocaloid/node-example:latest
+          requires:
+            - Publish Latest
+      - slim-shield/instrumentation:
+          name: Instrumentation
+          requires:
+            - Fat Test Suite
+          sourceImage: << pipeline.parameters.image-name >>
+      - runInstrumentedtest:
+          name: Instrumented Test Suite
+          imageName: sreejithfocaloid/node-example:latest.instrumented
+          requires:
+            - Instrumentation
+      - slim-shield/hardening:
+          name: Hardening
+          requires:
+            - Instrumentation
+            - Instrumented Test Suite
+      - runNormaltest:
+          name: Hardened Test Suite
+          imageName: sreejithfocaloid/node-example:latest.slimxx
+          requires:
+            - Hardening
+      
