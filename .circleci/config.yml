@@ -6,7 +6,7 @@ parameters:
   image-name:
     description: Image to be hardened.
     type: string
-    default: sreejithfocaloid/node-example:latest
+    default: slimpsv/node-example:latest
   cimg-tag:
     description: Which tag to be used for cimg/base.
     type: string
@@ -109,7 +109,7 @@ workflows:
           name: Publish Latest
       - runNormaltest:
           name: Fat Test Suite
-          imageName: sreejithfocaloid/node-example:latest
+          imageName: slimpsv/node-example:latest
           requires:
             - Publish Latest
       - slim-shield/instrumentation:
@@ -119,7 +119,7 @@ workflows:
           sourceImage: << pipeline.parameters.image-name >>
       - runInstrumentedtest:
           name: Instrumented Test Suite
-          imageName: sreejithfocaloid/node-example:latest.instrumented
+          imageName: slimpsv/node-example:latest.instrumented
           requires:
             - Instrumentation
       - slim-shield/hardening:
@@ -129,7 +129,7 @@ workflows:
             - Instrumented Test Suite
       - runNormaltest:
           name: Hardened Test Suite
-          imageName: sreejithfocaloid/node-example:latest.slimxx
+          imageName: slimpsv/node-example:latest.slimxx
           requires:
             - Hardening
       
