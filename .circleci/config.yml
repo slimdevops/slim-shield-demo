@@ -1,7 +1,7 @@
 version: 2.1
 
 orbs:
-  slim-shield: slimdevops/slim-shield@0.0.4
+  slim-shield: slimdevops/slim-shield@0.0.5
 parameters:
   image-name:
     description: Image to be hardened.
